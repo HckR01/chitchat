@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import React, { useState, useEffect, useRef } from "react";
+import { createClient } from "@supabase/supabase-js";
 import {
   Send,
   Image as ImageIcon,
@@ -17,26 +17,27 @@ import {
   MoreVertical,
   Maximize2,
   Hash,
-  User
-} from 'lucide-react';
+  User,
+} from "lucide-react";
 
 // Supabase Configuration
-// Publishable key for safe client-side browser usage
-const SUPABASE_URL = 'https://ilqdoyxxyfzobywrizsv.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_rOCbBNK6OKTtdWeoimf2zw_zOBX818o';
-const STORAGE_BUCKET = 'chat imgs';
+// The publishable key is safe for browser use when Row Level Security is enabled.
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const STORAGE_BUCKET =
+  import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || "chat imgs";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Deterministic vibrant avatar gradient based on username
-function getAvatarGradient(name = '') {
+function getAvatarGradient(name = "") {
   const gradients = [
-    'from-blue-500 via-indigo-500 to-violet-600',
-    'from-fuchsia-500 via-purple-600 to-indigo-600',
-    'from-emerald-400 via-teal-500 to-cyan-600',
-    'from-amber-400 via-orange-500 to-rose-500',
-    'from-rose-500 via-pink-600 to-purple-600',
-    'from-cyan-400 via-sky-500 to-blue-600',
+    "from-blue-500 via-indigo-500 to-violet-600",
+    "from-fuchsia-500 via-purple-600 to-indigo-600",
+    "from-emerald-400 via-teal-500 to-cyan-600",
+    "from-amber-400 via-orange-500 to-rose-500",
+    "from-rose-500 via-pink-600 to-purple-600",
+    "from-cyan-400 via-sky-500 to-blue-600",
   ];
   let hash = 0;
   for (let i = 0; i < name.length; i++) {
@@ -45,18 +46,33 @@ function getAvatarGradient(name = '') {
   return gradients[Math.abs(hash) % gradients.length];
 }
 
-const QUICK_ROOMS = ['lounge', 'dev-team', 'photos', 'general'];
-const POPULAR_EMOJIS = ['👍', '❤️', '🔥', '😂', '🎉', '🚀', '✨', '💯', '🙌', '👀'];
+const QUICK_ROOMS = ["lounge", "dev-team", "photos", "general"];
+const POPULAR_EMOJIS = [
+  "👍",
+  "❤️",
+  "🔥",
+  "😂",
+  "🎉",
+  "🚀",
+  "✨",
+  "💯",
+  "🙌",
+  "👀",
+];
 
 export default function App() {
   const [isConnected, setIsConnected] = useState(null);
-  const [username, setUsername] = useState(localStorage.getItem('chat_username') || '');
-  const [roomCode, setRoomCode] = useState(localStorage.getItem('chat_room') || '');
-  const [tempName, setTempName] = useState('');
-  const [tempRoom, setTempRoom] = useState('');
+  const [username, setUsername] = useState(
+    localStorage.getItem("chat_username") || "",
+  );
+  const [roomCode, setRoomCode] = useState(
+    localStorage.getItem("chat_room") || "",
+  );
+  const [tempName, setTempName] = useState("");
+  const [tempRoom, setTempRoom] = useState("");
 
   const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState('');
+  const [newMessage, setNewMessage] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
   const [pendingImage, setPendingImage] = useState(null); // { file, previewUrl }
@@ -81,19 +97,21 @@ export default function App() {
   // Close emoji picker when clicking outside
   useEffect(() => {
     const handleDocumentClick = (e) => {
-      if (!e.target.closest('.emoji-picker-container')) {
+      if (!e.target.closest(".emoji-picker-container")) {
         setShowEmojiPicker(false);
       }
     };
-    window.addEventListener('click', handleDocumentClick);
-    return () => window.removeEventListener('click', handleDocumentClick);
+    window.addEventListener("click", handleDocumentClick);
+    return () => window.removeEventListener("click", handleDocumentClick);
   }, []);
 
   // Check Supabase connectivity on mount
   useEffect(() => {
     async function checkConnection() {
       try {
-        const { error } = await supabase.from('messages').select('id', { count: 'exact', head: true });
+        const { error } = await supabase
+          .from("messages")
+          .select("id", { count: "exact", head: true });
         setIsConnected(!error);
       } catch {
         setIsConnected(false);
@@ -108,17 +126,17 @@ export default function App() {
 
     fetchMessages();
 
-    const cleanRoom = roomCode.toLowerCase().trim().replace(/^#+/, '');
+    const cleanRoom = roomCode.toLowerCase().trim().replace(/^#+/, "");
     const channelName = `chat_room_${cleanRoom}`;
 
     const channel = supabase
       .channel(channelName)
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
           filter: `room=eq.${cleanRoom}`,
         },
         (payload) => {
@@ -128,23 +146,23 @@ export default function App() {
               return [...prev, payload.new];
             });
           }
-        }
+        },
       )
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'messages',
+          event: "DELETE",
+          schema: "public",
+          table: "messages",
         },
         (payload) => {
           if (payload?.old?.id) {
             setMessages((prev) => prev.filter((m) => m.id !== payload.old.id));
           }
-        }
+        },
       )
       .subscribe((status) => {
-        setIsConnected(status === 'SUBSCRIBED');
+        setIsConnected(status === "SUBSCRIBED");
       });
 
     return () => {
@@ -154,16 +172,16 @@ export default function App() {
 
   // Auto-scroll when messages update or image is picked
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, uploading, pendingImage]);
 
   const fetchMessages = async () => {
-    const cleanRoom = roomCode.toLowerCase().trim().replace(/^#+/, '');
+    const cleanRoom = roomCode.toLowerCase().trim().replace(/^#+/, "");
     const { data, error } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('room', cleanRoom)
-      .order('created_at', { ascending: true });
+      .from("messages")
+      .select("*")
+      .eq("room", cleanRoom)
+      .order("created_at", { ascending: true });
 
     if (!error && data) {
       setMessages(data);
@@ -175,26 +193,26 @@ export default function App() {
     if (!tempName.trim() || !tempRoom.trim()) return;
 
     const cleanName = tempName.trim();
-    const cleanRoom = tempRoom.trim().toLowerCase().replace(/^#+/, '');
+    const cleanRoom = tempRoom.trim().toLowerCase().replace(/^#+/, "");
 
-    localStorage.setItem('chat_username', cleanName);
-    localStorage.setItem('chat_room', cleanRoom);
+    localStorage.setItem("chat_username", cleanName);
+    localStorage.setItem("chat_room", cleanRoom);
 
     setUsername(cleanName);
     setRoomCode(cleanRoom);
   };
 
   const handleLeaveRoom = () => {
-    localStorage.removeItem('chat_room');
-    setRoomCode('');
+    localStorage.removeItem("chat_room");
+    setRoomCode("");
     setMessages([]);
   };
 
   const handleSwitchUser = () => {
-    localStorage.removeItem('chat_username');
-    localStorage.removeItem('chat_room');
-    setUsername('');
-    setRoomCode('');
+    localStorage.removeItem("chat_username");
+    localStorage.removeItem("chat_room");
+    setUsername("");
+    setRoomCode("");
     setMessages([]);
   };
 
@@ -204,14 +222,14 @@ export default function App() {
     if (!file) return;
 
     if (file.size > 10 * 1024 * 1024) {
-      alert('Photo size exceeds 10MB limit.');
+      alert("Photo size exceeds 10MB limit.");
       return;
     }
 
     const previewUrl = URL.createObjectURL(file);
     setPendingImage({ file, previewUrl });
     inputFieldRef.current?.focus();
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const cancelPendingImage = () => {
@@ -228,37 +246,39 @@ export default function App() {
 
     if (!textToSend && !pendingImage) return;
 
-    const cleanRoom = roomCode.toLowerCase().trim().replace(/^#+/, '');
+    const cleanRoom = roomCode.toLowerCase().trim().replace(/^#+/, "");
 
     // If an image is attached, upload it first
     if (pendingImage) {
       setUploading(true);
-      setUploadProgress('Uploading photo...');
+      setUploadProgress("Uploading photo...");
 
       const file = pendingImage.file;
-      const fileExt = file.name.split('.').pop() || 'jpg';
+      const fileExt = file.name.split(".").pop() || "jpg";
       const uniqueFileName = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
       const filePath = uniqueFileName;
 
       try {
         const { error: uploadError } = await supabase.storage
           .from(STORAGE_BUCKET)
-          .upload(filePath, file, { cacheControl: '3600', upsert: false });
+          .upload(filePath, file, { cacheControl: "3600", upsert: false });
 
         if (uploadError) {
-          alert('Upload failed: ' + uploadError.message);
+          alert("Upload failed: " + uploadError.message);
           setUploading(false);
           setUploadProgress(null);
           return;
         }
 
-        const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(filePath);
+        const { data } = supabase.storage
+          .from(STORAGE_BUCKET)
+          .getPublicUrl(filePath);
 
-        const caption = textToSend || '📷 Photo';
-        setNewMessage('');
+        const caption = textToSend || "📷 Photo";
+        setNewMessage("");
         cancelPendingImage();
 
-        await supabase.from('messages').insert([
+        await supabase.from("messages").insert([
           {
             room: cleanRoom,
             sender: username,
@@ -267,7 +287,7 @@ export default function App() {
           },
         ]);
       } catch (err) {
-        alert('Upload error: ' + err.message);
+        alert("Upload error: " + err.message);
       } finally {
         setUploading(false);
         setUploadProgress(null);
@@ -276,8 +296,8 @@ export default function App() {
     }
 
     // Text-only message
-    setNewMessage('');
-    const { error } = await supabase.from('messages').insert([
+    setNewMessage("");
+    const { error } = await supabase.from("messages").insert([
       {
         room: cleanRoom,
         sender: username,
@@ -286,29 +306,32 @@ export default function App() {
     ]);
 
     if (error) {
-      showToast('Error sending message');
+      showToast("Error sending message");
     }
   };
 
   // Direct blob download
-  const handleDownloadImage = async (imageUrl, defaultName = 'shared-photo.jpg') => {
-    showToast('Downloading photo...');
+  const handleDownloadImage = async (
+    imageUrl,
+    defaultName = "shared-photo.jpg",
+  ) => {
+    showToast("Downloading photo...");
     try {
       const response = await fetch(imageUrl);
       const blob = await response.blob();
       const blobUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = blobUrl;
       link.download = defaultName;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(blobUrl);
-      showToast('Saved to device 📥');
+      showToast("Saved to device 📥");
     } catch {
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = imageUrl;
-      link.target = '_blank';
+      link.target = "_blank";
       link.download = defaultName;
       link.click();
     }
@@ -323,16 +346,16 @@ export default function App() {
 
     try {
       const { error } = await supabase
-        .from('messages')
+        .from("messages")
         .delete()
-        .eq('id', msg.id);
+        .eq("id", msg.id);
 
       if (error) {
-        console.error('Delete error:', error);
+        console.error("Delete error:", error);
         fetchMessages();
       }
     } catch (err) {
-      console.error('Delete exception:', err);
+      console.error("Delete exception:", err);
       fetchMessages();
     }
   };
@@ -341,7 +364,7 @@ export default function App() {
   const handleCopyText = (text) => {
     navigator.clipboard.writeText(text);
     setActionMenuMessage(null);
-    showToast('Copied to clipboard 📋');
+    showToast("Copied to clipboard 📋");
   };
 
   const copyRoomCode = () => {
@@ -380,8 +403,12 @@ export default function App() {
                   </div>
                 </div>
                 <div>
-                  <h1 className="text-xl font-bold tracking-tight text-white">QuickChat</h1>
-                  <p className="text-xs text-slate-400">Real-time room messenger</p>
+                  <h1 className="text-xl font-bold tracking-tight text-white">
+                    QuickChat
+                  </h1>
+                  <p className="text-xs text-slate-400">
+                    Real-time room messenger
+                  </p>
                 </div>
               </div>
 
@@ -390,14 +417,18 @@ export default function App() {
                 <span
                   className={`w-2 h-2 rounded-full ${
                     isConnected === true
-                      ? 'bg-emerald-400 animate-pulse'
+                      ? "bg-emerald-400 animate-pulse"
                       : isConnected === false
-                      ? 'bg-red-400'
-                      : 'bg-amber-400 animate-pulse'
+                        ? "bg-red-400"
+                        : "bg-amber-400 animate-pulse"
                   }`}
                 ></span>
                 <span className="text-slate-300">
-                  {isConnected === true ? 'Live' : isConnected === false ? 'Offline' : 'Checking'}
+                  {isConnected === true
+                    ? "Live"
+                    : isConnected === false
+                      ? "Offline"
+                      : "Checking"}
                 </span>
               </div>
             </div>
@@ -440,7 +471,9 @@ export default function App() {
 
                 {/* Quick Join Tags */}
                 <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                  <span className="text-[11px] text-slate-400 font-medium">Popular:</span>
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    Popular:
+                  </span>
                   {QUICK_ROOMS.map((room) => (
                     <button
                       key={room}
@@ -483,7 +516,6 @@ export default function App() {
 
       {/* Responsive Chat Container */}
       <div className="flex flex-col h-full w-full max-w-4xl bg-slate-900/95 sm:border-x border-slate-800/80 overflow-hidden relative">
-        
         {/* FIXED TOP NAVBAR */}
         <header className="shrink-0 z-20 sticky top-0 w-full px-3.5 sm:px-5 py-3 bg-slate-950/90 backdrop-blur-md border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -502,28 +534,37 @@ export default function App() {
                 >
                   <span className="truncate">#{roomCode}</span>
                   <span className="p-0.5 rounded text-slate-400 group-hover:text-indigo-400 transition shrink-0">
-                    {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    {copiedLink ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : (
+                      <Copy className="w-3 h-3" />
+                    )}
                   </span>
                 </button>
 
                 <span
                   className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 ${
                     isConnected === true
-                      ? 'bg-emerald-950/80 text-emerald-400 border-emerald-800/50'
-                      : 'bg-red-950/80 text-red-400 border-red-800/50'
+                      ? "bg-emerald-950/80 text-emerald-400 border-emerald-800/50"
+                      : "bg-red-950/80 text-red-400 border-red-800/50"
                   }`}
                 >
                   <span
                     className={`w-1.5 h-1.5 rounded-full ${
-                      isConnected === true ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'
+                      isConnected === true
+                        ? "bg-emerald-400 animate-pulse"
+                        : "bg-red-400"
                     }`}
                   ></span>
-                  <span>{isConnected === true ? 'Live' : 'Offline'}</span>
+                  <span>{isConnected === true ? "Live" : "Offline"}</span>
                 </span>
               </div>
 
               <p className="text-[11px] text-slate-400 truncate">
-                User: <span className="font-semibold text-emerald-400">{username}</span>
+                User:{" "}
+                <span className="font-semibold text-emerald-400">
+                  {username}
+                </span>
               </p>
             </div>
           </div>
@@ -558,39 +599,43 @@ export default function App() {
               <div className="w-14 h-14 rounded-2xl bg-indigo-600/15 border border-indigo-500/20 flex items-center justify-center text-2xl mb-3 shadow-lg shadow-indigo-500/5">
                 💬
               </div>
-              <h2 className="text-base font-bold text-slate-100">Welcome to #{roomCode}!</h2>
+              <h2 className="text-base font-bold text-slate-100">
+                Welcome to #{roomCode}!
+              </h2>
               <p className="text-xs text-slate-400 max-w-xs mt-1 leading-relaxed">
                 Send a message or attach a photo to start chatting in real time!
               </p>
 
               <div className="flex items-center gap-2 mt-4 flex-wrap justify-center">
-                {['👋 Hey there!', '📸 Photo time', '🚀 Ready to chat'].map((quickText) => (
-                  <button
-                    key={quickText}
-                    onClick={() => {
-                      setNewMessage(quickText);
-                      inputFieldRef.current?.focus();
-                    }}
-                    className="text-xs px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 transition"
-                  >
-                    {quickText}
-                  </button>
-                ))}
+                {["👋 Hey there!", "📸 Photo time", "🚀 Ready to chat"].map(
+                  (quickText) => (
+                    <button
+                      key={quickText}
+                      onClick={() => {
+                        setNewMessage(quickText);
+                        inputFieldRef.current?.focus();
+                      }}
+                      className="text-xs px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 transition"
+                    >
+                      {quickText}
+                    </button>
+                  ),
+                )}
               </div>
             </div>
           ) : (
             /* Messages List */
             messages.map((msg) => {
               const isMe = msg.sender === username;
-              const avatarGrad = getAvatarGradient(msg.sender || 'User');
-              const initial = (msg.sender?.[0] || '?').toUpperCase();
+              const avatarGrad = getAvatarGradient(msg.sender || "User");
+              const initial = (msg.sender?.[0] || "?").toUpperCase();
               const hasImage = Boolean(msg.image_url);
-              const hasText = msg.content && msg.content !== '📷 Photo';
+              const hasText = msg.content && msg.content !== "📷 Photo";
 
               return (
                 <div
                   key={msg.id}
-                  className={`flex items-end gap-2 group ${isMe ? 'flex-row-reverse' : 'flex-row'}`}
+                  className={`flex items-end gap-2 group ${isMe ? "flex-row-reverse" : "flex-row"}`}
                 >
                   {/* Sender Avatar */}
                   <div
@@ -601,7 +646,9 @@ export default function App() {
                   </div>
 
                   {/* Message Bubble + Action Button */}
-                  <div className={`flex flex-col max-w-[85%] sm:max-w-[70%] ${isMe ? 'items-end' : 'items-start'}`}>
+                  <div
+                    className={`flex flex-col max-w-[85%] sm:max-w-[70%] ${isMe ? "items-end" : "items-start"}`}
+                  >
                     {/* Sender Name */}
                     {!isMe && (
                       <span className="text-[11px] text-slate-400 mb-0.5 px-1 font-medium">
@@ -609,18 +656,22 @@ export default function App() {
                       </span>
                     )}
 
-                    <div className={`relative flex items-center gap-1 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                    <div
+                      className={`relative flex items-center gap-1 ${isMe ? "flex-row-reverse" : "flex-row"}`}
+                    >
                       {/* Bubble Body */}
                       <div
                         className={`p-3 rounded-2xl text-sm leading-relaxed shadow-md ${
                           isMe
-                            ? 'bg-gradient-to-br from-blue-600 via-indigo-600 to-indigo-700 text-white rounded-br-none border border-indigo-400/20 shadow-indigo-600/10'
-                            : 'bg-slate-800/95 text-slate-100 rounded-bl-none border border-slate-700/80 shadow-black/40'
+                            ? "bg-gradient-to-br from-blue-600 via-indigo-600 to-indigo-700 text-white rounded-br-none border border-indigo-400/20 shadow-indigo-600/10"
+                            : "bg-slate-800/95 text-slate-100 rounded-bl-none border border-slate-700/80 shadow-black/40"
                         }`}
                       >
                         {/* Text Content */}
                         {hasText && (
-                          <p className="break-words font-normal select-text">{msg.content}</p>
+                          <p className="break-words font-normal select-text">
+                            {msg.content}
+                          </p>
                         )}
 
                         {/* Image Card */}
@@ -629,7 +680,9 @@ export default function App() {
                             <img
                               src={msg.image_url}
                               alt="Attached photo"
-                              onClick={() => setActiveImagePreview(msg.image_url)}
+                              onClick={() =>
+                                setActiveImagePreview(msg.image_url)
+                              }
                               className="max-h-64 sm:max-h-80 w-full object-cover cursor-zoom-in hover:opacity-95 transition"
                               loading="lazy"
                             />
@@ -639,7 +692,10 @@ export default function App() {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleDownloadImage(msg.image_url, `photo_${msg.sender}_${msg.id.slice(0, 6)}.jpg`);
+                                  handleDownloadImage(
+                                    msg.image_url,
+                                    `photo_${msg.sender}_${msg.id.slice(0, 6)}.jpg`,
+                                  );
                                 }}
                                 title="Download photo"
                                 className="flex items-center gap-1 text-[11px] text-indigo-300 hover:text-white font-semibold transition"
@@ -649,7 +705,9 @@ export default function App() {
                               </button>
 
                               <button
-                                onClick={() => setActiveImagePreview(msg.image_url)}
+                                onClick={() =>
+                                  setActiveImagePreview(msg.image_url)
+                                }
                                 title="Enlarge"
                                 className="text-slate-400 hover:text-white p-0.5 transition"
                               >
@@ -662,16 +720,18 @@ export default function App() {
                         {/* Timestamp & Status */}
                         <div
                           className={`flex items-center justify-end gap-1 text-[10px] mt-1 font-mono ${
-                            isMe ? 'text-indigo-200/80' : 'text-slate-400'
+                            isMe ? "text-indigo-200/80" : "text-slate-400"
                           }`}
                         >
                           <span>
                             {new Date(msg.created_at).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
+                              hour: "2-digit",
+                              minute: "2-digit",
                             })}
                           </span>
-                          {isMe && <CheckCheck className="w-3.5 h-3.5 text-indigo-300" />}
+                          {isMe && (
+                            <CheckCheck className="w-3.5 h-3.5 text-indigo-300" />
+                          )}
                         </div>
                       </div>
 
@@ -697,17 +757,22 @@ export default function App() {
 
         {/* FIXED BOTTOM CONTROLS & INPUT DOCK */}
         <div className="shrink-0 z-20 sticky bottom-0 w-full bg-slate-950/95 backdrop-blur-md border-t border-slate-800">
-          
           {/* PENDING IMAGE PREVIEW BAR */}
           {pendingImage && (
             <div className="px-4 py-2 border-b border-slate-800/80 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="relative rounded-lg overflow-hidden border border-indigo-500/50 w-10 h-10 shrink-0">
-                  <img src={pendingImage.previewUrl} alt="Pending preview" className="w-full h-full object-cover" />
+                  <img
+                    src={pendingImage.previewUrl}
+                    alt="Pending preview"
+                    className="w-full h-full object-cover"
+                  />
                 </div>
                 <div className="text-xs">
                   <p className="font-semibold text-slate-200">Photo attached</p>
-                  <p className="text-slate-400 text-[11px]">Type caption or tap Send</p>
+                  <p className="text-slate-400 text-[11px]">
+                    Type caption or tap Send
+                  </p>
                 </div>
               </div>
 
@@ -726,7 +791,7 @@ export default function App() {
             <div className="px-4 py-1.5 bg-indigo-950/80 border-b border-indigo-900/60 flex items-center justify-between text-xs text-indigo-200">
               <span className="flex items-center gap-2">
                 <span className="w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"></span>
-                {uploadProgress || 'Uploading photo to Supabase...'}
+                {uploadProgress || "Uploading photo to Supabase..."}
               </span>
             </div>
           )}
@@ -734,7 +799,9 @@ export default function App() {
           {/* EMOJI DRAWER */}
           {showEmojiPicker && (
             <div className="emoji-picker-container px-3 py-2 border-b border-slate-800/80 flex items-center gap-1.5 overflow-x-auto">
-              <span className="text-[10px] text-slate-500 font-bold uppercase mr-1 shrink-0">Emojis:</span>
+              <span className="text-[10px] text-slate-500 font-bold uppercase mr-1 shrink-0">
+                Emojis:
+              </span>
               {POPULAR_EMOJIS.map((emoji) => (
                 <button
                   key={emoji}
@@ -776,8 +843,8 @@ export default function App() {
                 title="Add emoji"
                 className={`p-2.5 sm:p-3 rounded-xl transition border shrink-0 flex items-center justify-center ${
                   showEmojiPicker
-                    ? 'bg-indigo-600/20 border-indigo-500 text-indigo-400'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700/60'
+                    ? "bg-indigo-600/20 border-indigo-500 text-indigo-400"
+                    : "bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700/60"
                 }`}
               >
                 <Smile className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -789,7 +856,11 @@ export default function App() {
                 type="text"
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
-                placeholder={pendingImage ? 'Add caption to photo...' : `Message #${roomCode}...`}
+                placeholder={
+                  pendingImage
+                    ? "Add caption to photo..."
+                    : `Message #${roomCode}...`
+                }
                 disabled={uploading}
                 className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 text-white placeholder-slate-500 transition"
               />
@@ -800,8 +871,8 @@ export default function App() {
                 disabled={(!newMessage.trim() && !pendingImage) || uploading}
                 className={`p-2.5 sm:px-4 sm:py-3 rounded-xl font-bold text-sm transition shrink-0 flex items-center gap-1.5 shadow-md ${
                   (newMessage.trim() || pendingImage) && !uploading
-                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-indigo-600/25 active:scale-95'
-                    : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-800'
+                    ? "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-indigo-600/25 active:scale-95"
+                    : "bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-800"
                 }`}
               >
                 <span className="hidden sm:inline">Send</span>
@@ -810,7 +881,6 @@ export default function App() {
             </form>
           </footer>
         </div>
-
       </div>
 
       {/* ==================================================== */}
@@ -827,7 +897,10 @@ export default function App() {
           >
             <div className="px-3 py-1.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800 flex justify-between items-center">
               <span>Message Options</span>
-              <button onClick={() => setActionMenuMessage(null)} className="text-slate-500 hover:text-white">
+              <button
+                onClick={() => setActionMenuMessage(null)}
+                className="text-slate-500 hover:text-white"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -838,7 +911,10 @@ export default function App() {
                 onClick={() => {
                   const target = actionMenuMessage;
                   setActionMenuMessage(null);
-                  handleDownloadImage(target.image_url, `photo_${target.sender}_${target.id.slice(0, 6)}.jpg`);
+                  handleDownloadImage(
+                    target.image_url,
+                    `photo_${target.sender}_${target.id.slice(0, 6)}.jpg`,
+                  );
                 }}
                 className="w-full px-3 py-2.5 flex items-center gap-2.5 text-left hover:bg-slate-800 text-slate-200 rounded-xl text-xs transition"
               >
@@ -848,15 +924,16 @@ export default function App() {
             )}
 
             {/* Copy Text option */}
-            {actionMenuMessage.content && actionMenuMessage.content !== '📷 Photo' && (
-              <button
-                onClick={() => handleCopyText(actionMenuMessage.content)}
-                className="w-full px-3 py-2.5 flex items-center gap-2.5 text-left hover:bg-slate-800 text-slate-200 rounded-xl text-xs transition"
-              >
-                <Copy className="w-4 h-4 text-slate-400" />
-                <span className="font-medium">Copy Text</span>
-              </button>
-            )}
+            {actionMenuMessage.content &&
+              actionMenuMessage.content !== "📷 Photo" && (
+                <button
+                  onClick={() => handleCopyText(actionMenuMessage.content)}
+                  className="w-full px-3 py-2.5 flex items-center gap-2.5 text-left hover:bg-slate-800 text-slate-200 rounded-xl text-xs transition"
+                >
+                  <Copy className="w-4 h-4 text-slate-400" />
+                  <span className="font-medium">Copy Text</span>
+                </button>
+              )}
 
             {/* Direct Instant Delete from Database - NO POPUP */}
             {actionMenuMessage.sender === username && (
@@ -892,7 +969,10 @@ export default function App() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleDownloadImage(activeImagePreview, `photo_${Date.now()}.jpg`);
+                    handleDownloadImage(
+                      activeImagePreview,
+                      `photo_${Date.now()}.jpg`,
+                    );
                   }}
                   className="bg-slate-800 text-white px-3.5 py-1.5 rounded-xl hover:bg-slate-700 transition font-semibold flex items-center gap-1.5 border border-slate-700"
                 >
