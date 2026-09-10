@@ -18,6 +18,8 @@ import {
   Maximize2,
   Hash,
   User,
+  Users,
+  Circle,
 } from "lucide-react";
 
 // Supabase Configuration
@@ -112,6 +114,19 @@ const POPULAR_EMOJIS = [
   "👀",
 ];
 
+function getPresenceUsers(presenceState) {
+  return Object.values(presenceState || {})
+    .flat()
+    .filter((presence) => presence?.username)
+    .reduce((users, presence) => {
+      if (!users.some((user) => user.username === presence.username)) {
+        users.push(presence);
+      }
+      return users;
+    }, [])
+    .sort((first, second) => first.username.localeCompare(second.username));
+}
+
 export default function App() {
   const [isConnected, setIsConnected] = useState(null);
   const [username, setUsername] = useState(
@@ -134,6 +149,9 @@ export default function App() {
   const [activeImagePreview, setActiveImagePreview] = useState(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
+  const [onlineUsers, setOnlineUsers] = useState([]);
+  const [showMembers, setShowMembers] = useState(false);
+  const [roomActivity, setRoomActivity] = useState([]);
 
   // Context menu message target (opens bottom action sheet)
   const [actionMenuMessage, setActionMenuMessage] = useState(null);
@@ -175,11 +193,13 @@ export default function App() {
     checkConnection();
   }, []);
 
-  // Fetch messages and subscribe to Realtime channel (INSERT, DELETE)
+  // Fetch messages and subscribe to Realtime channel (messages + presence)
   useEffect(() => {
     if (!username || !roomCode) return;
 
     fetchMessages({ reset: true });
+    setOnlineUsers([]);
+    setRoomActivity([]);
 
     const cleanRoom = roomCode.toLowerCase().trim().replace(/^#+/, "");
     const channelName = `chat_room_${cleanRoom}`;
@@ -216,11 +236,38 @@ export default function App() {
           }
         },
       )
+      .on("presence", { event: "sync" }, () => {
+        setOnlineUsers(getPresenceUsers(channel.presenceState()));
+      })
+      .on("presence", { event: "join" }, ({ key, newPresences }) => {
+        setOnlineUsers(getPresenceUsers(channel.presenceState()));
+        const names = newPresences
+          .map((presence) => presence?.username)
+          .filter((name) => name && name !== username);
+        if (names.length > 0) {
+          setRoomActivity((current) =>
+            [
+              ...current,
+              {
+                id: `${key}-${Date.now()}`,
+                username: names.join(", "),
+              },
+            ].slice(-3),
+          );
+        }
+      })
+      .on("presence", { event: "leave" }, () => {
+        setOnlineUsers(getPresenceUsers(channel.presenceState()));
+      })
       .subscribe((status) => {
         setIsConnected(status === "SUBSCRIBED");
+        if (status === "SUBSCRIBED") {
+          channel.track({ username, online_at: new Date().toISOString() });
+        }
       });
 
     return () => {
+      channel.untrack();
       supabase.removeChannel(channel);
     };
   }, [username, roomCode]);
@@ -672,6 +719,21 @@ export default function App() {
           {/* Action Buttons */}
           <div className="flex items-center gap-1.5 shrink-0">
             <button
+              onClick={() => setShowMembers((current) => !current)}
+              title="Show people in this room"
+              aria-expanded={showMembers}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-medium transition border flex items-center gap-1.5 ${
+                showMembers
+                  ? "bg-indigo-600/20 border-indigo-500/60 text-indigo-200"
+                  : "bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700/60"
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>{onlineUsers.length}</span>
+              <span className="hidden sm:inline">online</span>
+            </button>
+
+            <button
               onClick={handleLeaveRoom}
               title="Switch to another room"
               className="px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition border border-slate-700/60 flex items-center gap-1"
@@ -691,6 +753,51 @@ export default function App() {
           </div>
         </header>
 
+        {showMembers && (
+          <aside className="absolute top-[4.35rem] right-3 sm:right-5 z-30 w-64 max-w-[calc(100%-1.5rem)] rounded-2xl border border-slate-700/80 bg-slate-900/98 p-3 shadow-2xl shadow-black/50 backdrop-blur-xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <div>
+                <p className="text-xs font-bold text-white">
+                  People in #{roomCode}
+                </p>
+                <p className="mt-0.5 text-[10px] text-slate-400">
+                  {onlineUsers.length} currently online
+                </p>
+              </div>
+              <Circle className="h-2.5 w-2.5 fill-emerald-400 text-emerald-400" />
+            </div>
+            <div className="mt-2 max-h-52 space-y-1 overflow-y-auto">
+              {onlineUsers.length === 0 ? (
+                <p className="px-2 py-3 text-center text-[11px] text-slate-500">
+                  Connecting to room...
+                </p>
+              ) : (
+                onlineUsers.map((user) => (
+                  <div
+                    key={user.username}
+                    className="flex items-center gap-2 rounded-xl px-2 py-2 hover:bg-slate-800/80"
+                  >
+                    <div
+                      className={`flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-tr ${getAvatarGradient(user.username)} text-[11px] font-bold text-white`}
+                    >
+                      {user.username[0].toUpperCase()}
+                    </div>
+                    <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-200">
+                      {user.username}
+                      {user.username === username && (
+                        <span className="ml-1 text-[10px] text-slate-500">
+                          (you)
+                        </span>
+                      )}
+                    </span>
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
+                  </div>
+                ))
+              )}
+            </div>
+          </aside>
+        )}
+
         {/* SCROLLABLE CHAT MESSAGES FEED */}
         <main
           ref={messagesFeedRef}
@@ -699,6 +806,31 @@ export default function App() {
           }}
           className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3.5 sm:p-5 space-y-3 bg-gradient-to-b from-[#090D16] to-[#06080E]"
         >
+          {roomActivity.map((activity) => (
+            <div
+              key={activity.id}
+              className="mx-auto flex w-fit max-w-full items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-[11px] text-emerald-200"
+            >
+              <Circle className="h-2 w-2 fill-emerald-400 text-emerald-400" />
+              <span className="truncate">
+                {activity.username}{" "}
+                {activity.username.includes(",") ? "joined" : "joined the room"}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setRoomActivity((current) =>
+                    current.filter((item) => item.id !== activity.id),
+                  )
+                }
+                className="text-emerald-300/70 hover:text-emerald-100"
+                title="Dismiss notification"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+
           {hasMoreMessages && (
             <div className="flex justify-center pb-1">
               <button
