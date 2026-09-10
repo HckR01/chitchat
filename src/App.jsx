@@ -26,8 +26,56 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const STORAGE_BUCKET =
   import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || "chat imgs";
+const MESSAGE_PAGE_SIZE = 50;
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+const MAX_IMAGE_WIDTH = 1600;
+const MAX_MESSAGE_LENGTH = 2000;
+const MAX_NAME_LENGTH = 32;
+const MAX_ROOM_LENGTH = 64;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const previewUrl = URL.createObjectURL(file);
+
+    image.onload = () => {
+      URL.revokeObjectURL(previewUrl);
+      const scale = Math.min(1, MAX_IMAGE_WIDTH / image.width);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.width * scale));
+      canvas.height = Math.max(1, Math.round(image.height * scale));
+      canvas
+        .getContext("2d")
+        .drawImage(image, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error("Could not compress image"));
+            return;
+          }
+          resolve(new File([blob], "photo.webp", { type: "image/webp" }));
+        },
+        "image/webp",
+        0.82,
+      );
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(previewUrl);
+      reject(new Error("Could not read image"));
+    };
+    image.src = previewUrl;
+  });
+}
+
+function getStoragePath(imageUrl) {
+  const marker = `/object/public/${encodeURIComponent(STORAGE_BUCKET)}/`;
+  const markerIndex = imageUrl?.indexOf(marker);
+  return markerIndex === -1
+    ? null
+    : decodeURIComponent(imageUrl.slice(markerIndex + marker.length));
+}
 
 // Deterministic vibrant avatar gradient based on username
 function getAvatarGradient(name = "") {
@@ -72,6 +120,8 @@ export default function App() {
   const [tempRoom, setTempRoom] = useState("");
 
   const [messages, setMessages] = useState([]);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [newMessage, setNewMessage] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
@@ -85,6 +135,7 @@ export default function App() {
   const [actionMenuMessage, setActionMenuMessage] = useState(null);
 
   const messagesEndRef = useRef(null);
+  const messagesFeedRef = useRef(null);
   const fileInputRef = useRef(null);
   const inputFieldRef = useRef(null);
 
@@ -124,7 +175,7 @@ export default function App() {
   useEffect(() => {
     if (!username || !roomCode) return;
 
-    fetchMessages();
+    fetchMessages({ reset: true });
 
     const cleanRoom = roomCode.toLowerCase().trim().replace(/^#+/, "");
     const channelName = `chat_room_${cleanRoom}`;
@@ -175,25 +226,49 @@ export default function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, uploading, pendingImage]);
 
-  const fetchMessages = async () => {
+  const fetchMessages = async ({ reset = false } = {}) => {
     const cleanRoom = roomCode.toLowerCase().trim().replace(/^#+/, "");
-    const { data, error } = await supabase
-      .from("messages")
-      .select("*")
-      .eq("room", cleanRoom)
-      .order("created_at", { ascending: true });
+    const query = supabase.from("messages").select("*").eq("room", cleanRoom);
+
+    const oldestMessage = messages[0];
+    const { data, error } = await (reset || !oldestMessage
+      ? query.order("created_at", { ascending: false }).limit(MESSAGE_PAGE_SIZE)
+      : query
+          .lt("created_at", oldestMessage.created_at)
+          .order("created_at", { ascending: false })
+          .limit(MESSAGE_PAGE_SIZE));
 
     if (!error && data) {
-      setMessages(data);
+      const orderedMessages = [...data].reverse();
+      setHasMoreMessages(data.length === MESSAGE_PAGE_SIZE);
+      setMessages((current) =>
+        reset ? orderedMessages : [...orderedMessages, ...current],
+      );
     }
+  };
+
+  const loadOlderMessages = async () => {
+    if (loadingOlder || !hasMoreMessages) return;
+    setLoadingOlder(true);
+    const previousHeight = messagesFeedRef.current?.scrollHeight || 0;
+    await fetchMessages();
+    requestAnimationFrame(() => {
+      const feed = messagesFeedRef.current;
+      if (feed) feed.scrollTop += feed.scrollHeight - previousHeight;
+    });
+    setLoadingOlder(false);
   };
 
   const handleLogin = (e) => {
     e.preventDefault();
     if (!tempName.trim() || !tempRoom.trim()) return;
 
-    const cleanName = tempName.trim();
-    const cleanRoom = tempRoom.trim().toLowerCase().replace(/^#+/, "");
+    const cleanName = tempName.trim().slice(0, MAX_NAME_LENGTH);
+    const cleanRoom = tempRoom
+      .trim()
+      .toLowerCase()
+      .replace(/^#+/, "")
+      .slice(0, MAX_ROOM_LENGTH);
 
     localStorage.setItem("chat_username", cleanName);
     localStorage.setItem("chat_room", cleanRoom);
@@ -221,8 +296,13 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 10 * 1024 * 1024) {
-      alert("Photo size exceeds 10MB limit.");
+    if (!file.type.startsWith("image/") || file.type === "image/svg+xml") {
+      showToast("Please choose a JPG, PNG, or WebP image");
+      return;
+    }
+
+    if (file.size > MAX_IMAGE_SIZE) {
+      showToast("Photo size exceeds 10MB limit");
       return;
     }
 
@@ -245,6 +325,10 @@ export default function App() {
     const textToSend = newMessage.trim();
 
     if (!textToSend && !pendingImage) return;
+    if (textToSend.length > MAX_MESSAGE_LENGTH) {
+      showToast(`Message limit is ${MAX_MESSAGE_LENGTH} characters`);
+      return;
+    }
 
     const cleanRoom = roomCode.toLowerCase().trim().replace(/^#+/, "");
 
@@ -253,9 +337,8 @@ export default function App() {
       setUploading(true);
       setUploadProgress("Uploading photo...");
 
-      const file = pendingImage.file;
-      const fileExt = file.name.split(".").pop() || "jpg";
-      const uniqueFileName = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
+      const file = await compressImage(pendingImage.file);
+      const uniqueFileName = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}.webp`;
       const filePath = uniqueFileName;
 
       try {
@@ -278,7 +361,7 @@ export default function App() {
         setNewMessage("");
         cancelPendingImage();
 
-        await supabase.from("messages").insert([
+        const { error: messageError } = await supabase.from("messages").insert([
           {
             room: cleanRoom,
             sender: username,
@@ -286,8 +369,13 @@ export default function App() {
             image_url: data.publicUrl,
           },
         ]);
+
+        if (messageError) {
+          await supabase.storage.from(STORAGE_BUCKET).remove([filePath]);
+          showToast("Photo message could not be saved");
+        }
       } catch (err) {
-        alert("Upload error: " + err.message);
+        showToast(err.message || "Upload error");
       } finally {
         setUploading(false);
         setUploadProgress(null);
@@ -306,6 +394,7 @@ export default function App() {
     ]);
 
     if (error) {
+      setNewMessage(textToSend);
       showToast("Error sending message");
     }
   };
@@ -353,6 +442,11 @@ export default function App() {
       if (error) {
         console.error("Delete error:", error);
         fetchMessages();
+      } else {
+        const imagePath = getStoragePath(msg.image_url);
+        if (imagePath) {
+          await supabase.storage.from(STORAGE_BUCKET).remove([imagePath]);
+        }
       }
     } catch (err) {
       console.error("Delete exception:", err);
@@ -445,6 +539,7 @@ export default function App() {
                     type="text"
                     value={tempName}
                     onChange={(e) => setTempName(e.target.value)}
+                    maxLength={MAX_NAME_LENGTH}
                     placeholder="Enter nickname..."
                     className="w-full bg-slate-950/80 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 text-white placeholder-slate-500 transition"
                     autoFocus
@@ -463,6 +558,7 @@ export default function App() {
                     type="text"
                     value={tempRoom}
                     onChange={(e) => setTempRoom(e.target.value)}
+                    maxLength={MAX_ROOM_LENGTH}
                     placeholder="e.g. general, secret99..."
                     className="w-full bg-slate-950/80 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 text-white placeholder-slate-500 transition"
                     required
@@ -592,7 +688,25 @@ export default function App() {
         </header>
 
         {/* SCROLLABLE CHAT MESSAGES FEED */}
-        <main className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3.5 sm:p-5 space-y-3 bg-gradient-to-b from-[#090D16] to-[#06080E]">
+        <main
+          ref={messagesFeedRef}
+          onScroll={(event) => {
+            if (event.currentTarget.scrollTop < 80) loadOlderMessages();
+          }}
+          className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3.5 sm:p-5 space-y-3 bg-gradient-to-b from-[#090D16] to-[#06080E]"
+        >
+          {hasMoreMessages && (
+            <div className="flex justify-center pb-1">
+              <button
+                type="button"
+                onClick={loadOlderMessages}
+                disabled={loadingOlder}
+                className="text-[11px] px-3 py-1.5 rounded-lg border border-slate-700/70 bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white disabled:opacity-60 transition"
+              >
+                {loadingOlder ? "Loading..." : "Load older messages"}
+              </button>
+            </div>
+          )}
           {messages.length === 0 ? (
             /* Empty State */
             <div className="flex flex-col items-center justify-center h-full text-center py-12 px-4">
@@ -856,6 +970,7 @@ export default function App() {
                 type="text"
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
+                maxLength={MAX_MESSAGE_LENGTH}
                 placeholder={
                   pendingImage
                     ? "Add caption to photo..."
