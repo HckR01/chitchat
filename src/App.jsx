@@ -22,8 +22,12 @@ import {
 
 // Supabase Configuration
 // The publishable key is safe for browser use when Row Level Security is enabled.
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const SUPABASE_URL =
+  import.meta.env.VITE_SUPABASE_URL ||
+  "https://ilqdoyxxyfzobywrizsv.supabase.co";
+const SUPABASE_ANON_KEY =
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  "sb_publishable_rOCbBNK6OKTtdWeoimf2zw_zOBX818o";
 const STORAGE_BUCKET =
   import.meta.env.VITE_SUPABASE_STORAGE_BUCKET || "chat imgs";
 const MESSAGE_PAGE_SIZE = 50;
